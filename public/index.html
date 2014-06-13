@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <script src="http://cpettitt.github.io/project/dagre-d3/latest/dagre-d3.min.js"></script>
+    <script src="http://code.jquery.com/jquery-1.11.0.min.js"></script>
+    <script type="text/javascript">
+
+
+    // Create a new empty graph
+    var g = new dagreD3.Digraph();
+
+    var NodeStore = function(){
+      if (localStorage['nodes']){
+        var nodes = JSON.parse( localStorage['nodes'] )
+      } else {
+        var nodes = []
+      }
+      
+      this.add = function(name){
+        var newNode = {
+          id: new Date().getTime(),
+          name: name
+        }
+        nodes.push( newNode )
+        save()
+        return newNode
+      }
+      
+      this.all = function(){
+        return nodes;
+      }
+    
+      var save = function(){
+        localStorage['nodes'] = JSON.stringify( nodes )
+      }
+    }
+    
+    var EdgeStore = function(){
+      if (localStorage['edges']){
+        var edges = JSON.parse( localStorage['edges'] )
+      } else {
+        var edges = []
+      }
+      
+      this.add = function(start, end){
+        var newEdge = {
+          id: new Date().getTime(),
+          start: start, 
+          end: end
+        }
+        if (edges.filter(function(edge){
+          return (edge.start == newEdge.start && edge.end == newEdge.end) || // duplicate
+                  (newEdge.start == newEdge.end) // self-referential
+        }).length > 0){
+          //don't create a duplicate
+          return false
+        } else {
+          edges.push( newEdge )
+          save()
+          return newEdge;
+        }
+
+      }
+      
+      this.all = function(){
+        return edges;
+      }
+    
+      this.del = function(id){
+        edges = edges.filter(function(edge){
+          return edge.id != id
+        })
+        save()
+      }
+      
+      var save = function(){
+        localStorage['edges'] = JSON.stringify( edges )
+      }
+    }
+    
+    var storedEdges  = new EdgeStore()
+    var storedNodes  = new NodeStore()
+    
+    storedNodes.all().forEach(function(node){
+      addNodeToGraph(node)
+    })
+    
+    var globalStart, globalEnd;
+    function startLinkBack(id){
+      if (globalEnd){
+        // do nothing
+        console.log('already defined')
+      } else {
+        $('#node'+ id).addClass('startConnect')
+        globalEnd = id
+      }
+    }
+    
+    function startLinkForward(id){
+      if (globalStart){
+        // do nothing
+        console.log('already defined')
+      } else {
+        $('#node'+ id).addClass('startConnect')
+        globalStart = id
+      }
+    }
+    
+    function makeConnection(id){
+      if (globalStart){
+        createEdge(globalStart, id)
+      } else if (globalEnd){
+        createEdge(id, globalEnd)
+      }
+    }
+    
+    storedEdges.all().forEach(function(edge){
+      addEdgeToGraph(edge)
+    })
+    
+    function createEdge(start, end){
+      var newEdge = storedEdges.add(start, end)
+      if (newEdge){
+        addEdgeToGraph(newEdge)
+        redraw()
+      } else {
+        notice("Can't duplicate edges")
+      }
+      globalStart = null
+      globalEnd = null
+      $('.startConnect').removeClass('startConnect')
+    }
+    
+    function addEdgeToGraph(edge){
+      g.addEdge(edge.id, edge.start, edge.end, {label: '<a href="#" onclick="delEdge('+edge.id+')">x</a>'});
+    }
+    
+    function addNodeToGraph(node){
+      g.addNode(node.id, {
+        label: nodeHtml(node) 
+      });
+    }
+    
+    function nodeHtml(node){
+      var str = "<div class=\"nodeHolder\" data-node-id=\""+node.id+"\">"
+      str += "<a href=\"#\" class=\"linkBack\">&lt;&lt;&nbsp;</a>"
+      str += "<a id=\"node"+node.id+"\" class=\"clicker\" href=\"#\">"+ node.name+ "</a>"
+      str += "<a href=\"#\" class=\"linkForward\">&nbsp;&gt;&gt;</a>"
+      str += "</div>"
+      return str
+    }
+    
+    function delEdge(id){
+      g.delEdge(id)
+      storedEdges.del(id)
+      redraw();
+      return false
+    }
+    
+    function addNode(str){
+      var newNode = storedNodes.add(str)
+      addNodeToGraph(newNode)
+      if (globalStart){
+        createEdge(globalStart, newNode.id)
+      }
+      redraw()
+      return false
+    }
+    
+    function notice(msg){
+      $('#notice').html(msg)
+      setTimeout(function(){
+        $('#notice').empty()
+      }, 3000)
+    }
+    
+    function redraw(){
+      renderer.
+        layout(layout).
+        zoom(false).
+        run(g, d3.select("svg g"));
+      addClickHandlers()
+    }
+    
+    function nuke(){
+      localStorage.clear()
+      g = new dagreD3.Digraph();
+      redraw()
+    }
+    
+    $().ready(function(){
+      $("#addNodeForm").submit(function(){
+        addNode($('#newNodeName').val())
+        $('#newNodeName').val("")
+        return false
+      })
+    })
+    
+    function addClickHandlers(){
+      $('.linkBack').on("click", function(evt){
+        var nodeId = $(this).parent().data('node-id')
+        startLinkBack(nodeId)
+        evt.stopPropagation()
+      })
+      
+      $('.linkForward').on("click", function(evt){
+        var nodeId = $(this).parent().data('node-id')
+        startLinkForward(nodeId)
+        evt.stopPropagation()
+      })
+      
+      $('.nodeHolder').on("click", function(evt){
+        var nodeId = $(this).data('node-id')
+        makeConnection(nodeId)
+      })
+    }
+    
+    </script>
+    <style>
+    svg {
+        overflow: hidden;
+    }
+
+    .node rect {
+        stroke: #333;
+        stroke-width: 1.5px;
+        fill: #fff;
+    }
+    .node:hover {
+        fill: #FFCDC1#fff;
+    }
+
+    .edgeLabel rect {
+        fill: #fff;
+    }
+
+    .edgePath {
+        stroke: #333;
+        stroke-width: 1.5px;
+        fill: none;
+    }
+    #notice {
+      background: #FFA7A4;
+      color: red;
+      position: absolute;
+    }
+    .startConnect {
+      background: #FFF087;
+    }
+    </style>
+    <style type="text/css" media="screen">
+    * {
+      font-family: helvetica;
+    }
+    svg a {
+      text-decoration: none;
+    }
+    svg a:hover {
+      background: #FFD129;
+    }
+    svg div {
+      padding: 5px;
+    }
+    </style>
+  </head>
+  <body>
+    <div height=10%>
+      <form id="addNodeForm">
+        <input id="newNodeName">
+        <input type="submit">
+      </form>
+    </div>
+    <div id="notice"></div>
+    <svg width=100% height=90%>
+        <g transform="translate(20,20)"/>
+    </svg>
+    <script>
+    var renderer = new dagreD3.Renderer();
+    // renderer.edgeInterpolate('linear');
+    
+    var layout = dagreD3.layout()
+                        .nodeSep(20)
+                        .rankDir("LR");
+      
+    redraw()
+    
+    
+    </script>
+    
+    <a href="#" onclick="nuke()">clear</a>
+  </body>
+</html>
